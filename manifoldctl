@@ -1,0 +1,127 @@
+#!/bin/bash
+CONF_DIR="$HOME/.config/manifold"
+mkdir -p "$CONF_DIR"
+
+render_overview_backdrop() {
+    python3 - << 'PYEOF'
+import os, math, subprocess, ast, cairo
+
+conf_dir = os.path.expanduser("~/.config/manifold")
+mode_file = os.path.join(conf_dir, "mode")
+pal_file = os.path.join(conf_dir, "palette")
+out_png = os.path.join(conf_dir, "backdrop.png")
+
+mode = open(mode_file).read().strip() if os.path.exists(mode_file) else "gargantua"
+pal_name = open(pal_file).read().strip() if os.path.exists(pal_file) else "interstellar"
+
+PALETTES = {
+    "interstellar": {"bg": (0.014, 0.014, 0.020), "grid": (0.45, 0.56, 0.78), "pri": (1.00, 0.84, 0.55), "sec": (0.95, 0.55, 0.22), "acc": (1.00, 0.96, 0.88)},
+    "aether":       {"bg": (0.010, 0.016, 0.028), "grid": (0.32, 0.55, 0.85), "pri": (0.55, 0.85, 1.00), "sec": (0.25, 0.52, 0.96), "acc": (0.94, 0.98, 1.00)},
+    "cosmos":       {"bg": (0.018, 0.010, 0.030), "grid": (0.52, 0.35, 0.82), "pri": (0.95, 0.52, 0.78), "sec": (0.62, 0.32, 0.95), "acc": (1.00, 0.92, 0.97)},
+    "monolith":     {"bg": (0.012, 0.012, 0.015), "grid": (0.42, 0.42, 0.46), "pri": (0.88, 0.88, 0.92), "sec": (0.55, 0.55, 0.60), "acc": (1.00, 1.00, 1.00)},
+}
+pal = PALETTES.get(pal_name, PALETTES["interstellar"])
+
+w, h = 1920, 1080
+cx, cy = w * 0.5, h * 0.5
+surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+cr = cairo.Context(surf)
+
+cr.set_source_rgb(*pal["bg"])
+cr.paint()
+
+if mode == "zen":
+    # Pure Minimalist Mathematical Sanctum Backdrop (No Grid, No Fabric)
+    cr.set_line_width(0.9)
+    cr.set_source_rgba(pal["pri"][0], pal["pri"][1], pal["pri"][2], 0.28)
+    cr.arc(cx, cy, 180.0, 0, math.tau); cr.stroke()
+
+    cr.set_line_width(0.75)
+    cr.set_source_rgba(pal["grid"][0], pal["grid"][1], pal["grid"][2], 0.22)
+    cr.arc(cx + 55.6, cy, 124.4, 0, math.tau); cr.stroke()
+    cr.arc(cx - 55.6, cy, 124.4, 0, math.tau); cr.stroke()
+
+    cr.set_line_width(1.5)
+    cr.set_source_rgba(pal["acc"][0], pal["acc"][1], pal["acc"][2], 0.65)
+    for i in range(161):
+        u = (i / 160.0) * math.tau
+        denom = 1.0 + math.sin(u)**2
+        ix = cx + (68.0 * math.cos(u)) / denom
+        iy = cy + (68.0 * math.sin(u) * math.cos(u)) / denom
+        cr.move_to(ix, iy) if i == 0 else cr.line_to(ix, iy)
+    cr.stroke()
+else:
+    def warp(x, y):
+        dx, dy = x - cx, y - cy
+        pull = 25000.0 / (dx*dx + dy*dy + 4200.0)
+        return x - dx * pull, y - dy * pull
+
+    sp = 56
+    margin = sp * 6
+    cr.set_line_width(0.95)
+    cr.set_source_rgba(pal["grid"][0], pal["grid"][1], pal["grid"][2], 0.22)
+    for gx in range(-margin, w + margin + 1, sp):
+        for gy in range(-margin, h + margin + 1, sp):
+            wx, wy = warp(gx, gy)
+            cr.move_to(wx, wy) if gy == -margin else cr.line_to(wx, wy)
+    for gy in range(-margin, h + margin + 1, sp):
+        for gx in range(-margin, w + margin + 1, sp):
+            wx, wy = warp(gx, gy)
+            cr.move_to(wx, wy) if gx == -margin else cr.line_to(wx, wy)
+    cr.stroke()
+
+    cr.set_source_rgb(0.01, 0.01, 0.014)
+    cr.arc(cx, cy, 112, 0, math.tau); cr.fill()
+    cr.set_line_width(2.2)
+    cr.set_source_rgba(pal["acc"][0], pal["acc"][1], pal["acc"][2], 0.88)
+    cr.arc(cx, cy, 113, 0, math.tau); cr.stroke()
+
+surf.write_to_png(out_png)
+uri = f"file://{out_png}"
+subprocess.run(["gsettings", "set", "org.gnome.desktop.background", "picture-uri", uri], stderr=subprocess.DEVNULL)
+subprocess.run(["gsettings", "set", "org.gnome.desktop.background", "picture-uri-dark", uri], stderr=subprocess.DEVNULL)
+
+res = subprocess.run(["gsettings", "get", "org.gnome.shell", "enabled-extensions"], capture_output=True, text=True).stdout.strip()
+exts = [] if res.startswith("@as") or not res else ast.literal_eval(res)
+if "math-manifold@kaush" not in exts:
+    exts.append("math-manifold@kaush")
+    subprocess.run(["gsettings", "set", "org.gnome.shell", "enabled-extensions", str(exts)])
+subprocess.run(["gnome-extensions", "enable", "math-manifold@kaush"], stderr=subprocess.DEVNULL)
+PYEOF
+}
+
+case "$1" in
+    gargantua|fabric|supernova|attractor|pendulum|fibonacci|tesseract|geodesic)
+        echo "$1" > "$CONF_DIR/mode"
+        echo "$1" > "$CONF_DIR/last_active_mode"
+        render_overview_backdrop
+        notify-send -u normal -t 2000 "✦ Manifold Engine" "Mode set to: ${1^^}"
+        echo "✅ Animation mode set to: $1"
+        ;;
+    interstellar|aether|cosmos|monolith)
+        echo "$1" > "$CONF_DIR/palette"
+        render_overview_backdrop
+        notify-send -u normal -t 2000 "✦ Manifold Palette" "Palette set to: ${1^^}"
+        echo "✅ Color palette set to: $1"
+        ;;
+    off|zen)
+        echo "zen" > "$CONF_DIR/mode"
+        render_overview_backdrop
+        notify-send -u low -t 2000 "✦ Manifold Sanctum" "Fabric closed // Minimalist Zen Mode active"
+        echo "✦ Space-time fabric closed. Minimalist Mathematical Sanctum active."
+        ;;
+    on)
+        LAST=$(cat "$CONF_DIR/last_active_mode" 2>/dev/null || echo "gargantua")
+        [[ "$LAST" == "zen" || -z "$LAST" ]] && LAST="gargantua"
+        echo "$LAST" > "$CONF_DIR/mode"
+        render_overview_backdrop
+        notify-send -u normal -t 2000 "✦ Manifold Engine" "Space-Time Fabric Restored: ${LAST^^}"
+        echo "✅ Space-Time Fabric restored to: $LAST"
+        ;;
+    *)
+        echo "✦ MANIFOLD CONTROLLER ✦"
+        echo "Modes    : manifoldctl {gargantua|fabric|supernova|attractor|pendulum|fibonacci|tesseract|geodesic}"
+        echo "Palettes : manifoldctl {interstellar|aether|cosmos|monolith}"
+        echo "Sanctum  : manifoldctl {on|off}"
+        ;;
+esac

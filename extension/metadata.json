@@ -1,0 +1,7 @@
+{
+  "uuid": "math-manifold@kaush",
+  "name": "Protocol Manifold (Safe Desktop Engine)",
+  "description": "60FPS Cairo vector space-time manifold with gravitational wave & black hole physics, isolated strictly to the desktop background layer.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "version": 3
+}
